@@ -1,0 +1,49 @@
+import torch
+from torch.utils.data import Dataset, DataLoader
+from model import LinearTransformerLM
+
+class DummyDataset(Dataset):
+    def __init__(self, seq_length=64, num_samples=1000, vocab_size=10000):
+        self.data = torch.randint(0, vocab_size, (num_samples, seq_length))
+    
+    def __len__(self):
+        return len(self.data)
+    
+    def __getitem__(self, idx):
+        return self.data[idx]
+
+def train():
+    device = torch.device('cpu')
+    vocab_size = 10000
+    dim = 256
+    num_layers = 4
+    num_heads = 8
+    seq_length = 64
+    batch_size = 4
+    num_epochs = 1
+
+    model = LinearTransformerLM(vocab_size, dim, num_layers, num_heads).to(device)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
+    criterion = nn.CrossEntropyLoss()
+
+    dataset = DummyDataset(seq_length=seq_length)
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+
+    for epoch in range(num_epochs):
+        model.train()
+        for batch in dataloader:
+            inputs = batch.to(device)
+            targets = inputs[:, 1:].contiguous()
+            outputs = model(inputs[:, :-1])
+            loss = criterion(outputs.view(-1, vocab_size), targets.view(-1))
+
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            print(f"Loss: {loss.item()}")
+
+    torch.save(model.state_dict(), 'model.pth')
+
+if __name__ == '__main__':
+    train()
