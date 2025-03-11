@@ -1,49 +1,85 @@
 import torch
 from torch.utils.data import Dataset, DataLoader
-from model import LinearTransformerLM
+from transformers import GPT2Tokenizer
+from model import LinearLM
+import numpy as np
+import os
 
-class DummyDataset(Dataset):
-    def __init__(self, seq_length=64, num_samples=1000, vocab_size=10000):
-        self.data = torch.randint(0, vocab_size, (num_samples, seq_length))
-    
+class C4Dataset(Dataset):
+    def __init__(self, data, seq_length=256):
+        self.data = data
+        self.seq_length = seq_length
+        
     def __len__(self):
         return len(self.data)
     
     def __getitem__(self, idx):
-        return self.data[idx]
+        text = self.data[idx]['text']
+        tokens = tokenizer.encode(text, max_length=self.seq_length, 
+                                 truncation=True, padding='max_length')
+        return torch.tensor(tokens[:-1]), torch.tensor(tokens[1:])
 
-def train():
-    device = torch.device('cpu')
-    vocab_size = 10000
-    dim = 256
-    num_layers = 4
-    num_heads = 8
-    seq_length = 64
-    batch_size = 4
-    num_epochs = 1
-
-    model = LinearTransformerLM(vocab_size, dim, num_layers, num_heads).to(device)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
+def train(model, train_loader, val_loader, epochs=3, device='cpu'):
+    optimizer = torch.optim.AdamW(model.parameters(), lr=5e-4)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, epochs)
     criterion = nn.CrossEntropyLoss()
-
-    dataset = DummyDataset(seq_length=seq_length)
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-
-    for epoch in range(num_epochs):
+    
+    best_loss = float('inf')
+    for epoch in range(epochs):
         model.train()
-        for batch in dataloader:
-            inputs = batch.to(device)
-            targets = inputs[:, 1:].contiguous()
-            outputs = model(inputs[:, :-1])
-            loss = criterion(outputs.view(-1, vocab_size), targets.view(-1))
-
+        train_loss = 0
+        for batch_idx, (inputs, targets) in enumerate(train_loader):
+            inputs, targets = inputs.to(device), targets.to(device)
+            
             optimizer.zero_grad()
+            outputs = model(inputs)
+            loss = criterion(outputs.view(-1, outputs.size(-1)), targets.view(-1))
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
-
-            print(f"Loss: {loss.item()}")
-
-    torch.save(model.state_dict(), 'model.pth')
+            
+            train_loss += loss.item()
+            if batch_idx % 100 == 0:
+                print(f'Epoch {epoch} | Batch {batch_idx} Loss: {loss.item():.4f}')
+        
+        # Validation
+        model.eval()
+        val_loss = 0
+        with torch.no_grad():
+            for inputs, targets in val_loader:
+                inputs, targets = inputs.to(device), targets.to(device)
+                outputs = model(inputs)
+                val_loss += criterion(outputs.view(-1, outputs.size(-1)), 
+                              targets.view(-1)).item()
+        
+        avg_train = train_loss / len(train_loader)
+        avg_val = val_loss / len(val_loader)
+        print(f'Epoch {epoch} | Train Loss: {avg_train:.4f} | Val Loss: {avg_val:.4f}')
+        
+        # Save best model
+        if avg_val < best_loss:
+            best_loss = avg_val
+            torch.save(model.state_dict(), 'best_model.pth')
+        
+        scheduler.step()
 
 if __name__ == '__main__':
-    train()
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    
+    # Load tokenizer and dataset
+    tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
+    from datasets import load_dataset
+    dataset = load_dataset('c4', 'en', split='train', streaming=True).take(10000)
+    
+    # Prepare dataloaders
+    train_dataset = C4Dataset(dataset.take(8000))
+    val_dataset = C4Dataset(dataset.skip(8000).take(2000))
+    
+    train_loader = DataLoader(train_dataset, batch_size=8, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=8)
+    
+    # Initialize model
+    model = LinearLM(vocab_size=tokenizer.vocab_size, dim=256, depth=6).to(device)
+    
+    # Train
+    train(model, train_loader, val_loader, epochs=3, device=device)
