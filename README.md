@@ -10,7 +10,6 @@ Official PyTorch implementation of the linear-complexity transformer architectur
 ## Table of Contents
 - [Key Features](#key-features)
 - [Installation](#installation)
-- [Project Structure](#project-structure)
 - [Model Architecture](#model-architecture)
 - [Dataset Preparation](#dataset-preparation)
 - [Training](#training)
