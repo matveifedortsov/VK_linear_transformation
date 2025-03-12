@@ -49,6 +49,19 @@ Official PyTorch implementation of the linear-complexity transformer architectur
 - 16GB+ RAM (for base config)
 - 50GB+ disk space (for full C4 training)
 
+### Model Architecture
+Core Formulation
+The linear attention mechanism implements the associative reformulation:
+
+math
+Copy
+\text{Attention}(Q,K,V) = \frac{ϕ(Q)(ϕ(K)^\top V)}{ϕ(Q)(ϕ(K)^\top 1)}
+Where:
+
+ϕ(x) = ELU(x) + 1 (feature map)
+
+1 = vector of ones for normalization
+
 ### Dependency Setup
 ```bash
 # Create conda environment
@@ -62,8 +75,4 @@ pip install transformers==4.35.0 datasets==2.14.5 wandb==0.16.0
 # Optional for development
 pip install black==23.11.0 flake8==6.1.0 mypy==1.6.1
 
-**### Model architecture**
-Core Formulation
-The linear attention mechanism implements the associative reformulation:
-\text{Attention}(Q,K,V) = \frac{ϕ(Q)(ϕ(K)^\top V)}{ϕ(Q)(ϕ(K)^\top 1)}
 
